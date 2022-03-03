@@ -130,7 +130,8 @@ async fn measure_memory_internal(
   mut output_file: Option<File>,
   threshold_options: ThresholdOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-  let mut timer = time::interval(Duration::from_millis(100));
+  let mut timer = time::interval(Duration::from_millis(250));
+  let mut i = 0;
   let mut sys = System::new_all();
   let pid = (pid as PidT).into();
   let mut high_water_mark_kib: u64 = 0;
@@ -148,13 +149,22 @@ async fn measure_memory_internal(
         aggregate_kib > high_water_mark_kib + threshold_options.threshold_absolute;
       let met_threshold_relative = aggregate_kib
         > ((high_water_mark_kib as f64) * (1.0 + threshold_options.threshold_relative)) as u64;
-      if met_threshold_absolute && met_threshold_relative {
-        eprintln!(
-          "🌊 gotta-watch-em-all: Reached a new high water mark of {} KiB, {} greater than before!",
-          aggregate_kib,
-          aggregate_kib - high_water_mark_kib
-        );
-        high_water_mark_kib = aggregate_kib;
+      let met_thresholds = met_threshold_absolute && met_threshold_relative;
+      let print_anyway = i % 4 == 0;
+      if met_thresholds || print_anyway {
+        if met_thresholds {
+          eprintln!(
+            "🌊 gotta-watch-em-all: Reached a new high water mark of {} KiB, {} greater than before!",
+            aggregate_kib,
+            aggregate_kib - high_water_mark_kib
+          );
+          high_water_mark_kib = aggregate_kib;
+        } else {
+          eprintln!(
+            "🌊 gotta-watch-em-all: Presently at {} KiB",
+            aggregate_kib,
+          );
+        }
 
         match print_stats(pid, &process_children, &process_memory, &mut output_file).await {
           Err(err) => eprintln!("Error: {:?}", err),
@@ -162,6 +172,7 @@ async fn measure_memory_internal(
         };
       }
     };
+    i = i + 1;
 
     select! {
         _ = child_token.cancelled() => {
